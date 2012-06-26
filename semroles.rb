@@ -37,6 +37,7 @@ def process_file(lines)
   current_role = nil
   lines.each do |line|
     prim = match_primary(line)
+    next if (!current_sem.nil? && current_sem.primary==prim) # remove error where having the same artifact listed twice in a row caused an unfortunate key1->key1 match
     current_prim = prim if !prim.nil? 
     next if current_prim.nil?
     if (current_sem.nil? || current_sem.primary!=current_prim)
