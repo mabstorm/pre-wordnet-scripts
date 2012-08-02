@@ -24,7 +24,7 @@ def inflect(word)
   morphids.each do |morphid|
     inflected.push(morphs(morphid))
   end
-  return inflected
+  return inflected.flatten.compact
 end
 
 def print_morphs(all_morphs)
@@ -32,7 +32,7 @@ def print_morphs(all_morphs)
 end
 
 if __FILE__ == $0
-  print_morphs(inflect(ARGS[1]))
+  print_morphs(inflect(ARGV[1]))
   
 end
 

@@ -1,9 +1,9 @@
-#!/usr/bin/ruby
+#!/usr/share/ruby-rvm/rubies/ruby-1.9.2-p320/bin/ruby
 # -*- coding: utf-8 -*-
 
 require 'sqlite3'
 $semroles = File.open('../processed_semroles.txt','r').readlines
-$db = SQLite3::Database.new("../working_wordnet.db")
+$db = SQLite3::Database.new("../empty.db")
 $all_roles = %w{action theme product location agent instrument result cause patient beneficiary creator goal experiencer}
 $ROLL_INDEX_OFFSET = 100
 
