@@ -1,4 +1,5 @@
-#!/usr/bin/ruby
+#!/ruby-1.9.2
+# encoding: utf-8
 
 require 'ap'
 require './wn_queries_helper.rb'
@@ -6,7 +7,9 @@ require './wn_queries_helper.rb'
 $metaphor_file = "../metaphors.txt"
 $metaphor_lines = File.open($metaphor_file,'r').readlines
 $regex = {'metaphors' => Regexp.new(/\$\$\$(.*)/),
-          'sensekeys' => Regexp.new(/%%([^%]*%[\S]*)/)}
+          'sensekeys' => Regexp.new(/%%([^%]*%[\S]*)/),
+          'words'     => Regexp.new(/^([^\/]*)[\s]+[-|–]/),
+          'comments'  => Regexp.new(/^\/\/(.*)/)}
 
 #---------------------------------------------#
 #-------Processing the metaphors file---------#
@@ -31,9 +34,11 @@ end
 =end
 
 # defining show_metaphors, show_sensekeys, etc. at runtime
+# defining metaphors_on_line(line), sensekeys_on_line(line)
 metaclass = class << self; self; end
 $regex.each_pair do |name,key|
   metaclass.send(:define_method, "show_#{name}") { show_matches { |array, line| array.push(line.scan(key)) } }
+  metaclass.send(:define_method, "#{name}_on") { |line| line.scan(key).flatten }
 end
 
 def show_matches
@@ -41,6 +46,49 @@ def show_matches
   $metaphor_lines.each {|line| yield matches, line}
   matches = matches.flatten.compact
 end
+
+def process_metaphors_file
+  metaphors = Array.new
+  current_metaphor = nil
+  current_keys = nil
+  current_word = nil
+  current_word_position = -1
+  $metaphor_lines.each do |line|
+    line.strip!
+    next if line.empty?
+    next unless comments_on(line).empty? # skip commented lines, comments made with //
+    found_metaphor = metaphors_on(line).first.downcase rescue ""
+    unless found_metaphor.empty?
+      current_metaphor.print unless current_metaphor.nil?
+      puts ""
+      current_metaphor.add_member(current_word, current_word_position, current_keys) unless (current_metaphor.nil? || current_word.nil?) # finish up last metaphor
+      current_metaphor = Metaphor.new(found_metaphor)
+      current_word = nil
+      current_keys = nil
+      current_position = -1
+      metaphors.push(current_metaphor)
+      next # should never be anything left to do for a line that is a new metaphor
+    end
+    next if current_metaphor.nil?
+    word = words_on(line).first.downcase rescue ""
+    sensekey = sensekeys_on line
+    if ((word.nil? || word.empty?) && sensekey.empty?)
+      current_metaphor.definition = line
+    else
+      if (!word.nil? && !word.empty?)
+        current_metaphor.add_member(current_word, current_word_position, current_keys) unless current_word.nil?
+        current_word = word
+        current_keys = Array.new
+        current_word_position = current_metaphor.text.split(" ").index(current_word) or -1
+      end
+      current_keys.push(sensekey) if not sensekey.empty?
+    end
+  end
+
+  metaphors.each {|metaphor| metaphor.print} # print all metaphors
+
+end
+
 
 #-------------------------------------------------------#
 #---------Dealing with metaphors in the database--------#
@@ -64,7 +112,7 @@ def has_old_sensekey? sensekey
   $db.query("SELECT sensekey FROM senses WHERE sensekey==?", sensekey).to_a.length > 0
 end
 def new_sensekey_from_old sensekey
-  $db.query("SELECT new_sensekey from senses WHERE sensekey==?", sensekey).to_a.first.first
+  $db.query("SELECT new_sensekey from senses WHERE sensekey==?", sensekey).to_a.first.first rescue "not found"
 end
 def get_new_old_synsetid
   $db.query("SELECT MAX(synsetid) FROM synsets").to_a.first.first + 1
@@ -81,6 +129,11 @@ class Metaphor
     mm = MetaphorMember.new(word, position, @senseid)
     list_of_keys.each {|key| mm.add_key(key) }
     @members.push(mm)
+  end
+  def print
+    puts "Metaphor: #{@text}\nDefinition: #{@definition}"
+    @members.each {|member| member.print}
+
   end
   def commit_self
     return false if @definition.nil?
@@ -127,7 +180,11 @@ class MetaphorMember
     @senseid = senseid
   end
   def add_key sensekey
-    @key_pairs.push([sensekey, new_sensekey_from_old(sensekey)])
+    @key_pairs.push([sensekey, (sensekey.nil? || sensekey.empty?) ? "not found" : new_sensekey_from_old(sensekey)])
+  end
+  def print
+    puts "\t#{@word} ##{@position}"
+    @key_pairs.each {|oldkey, newkey| puts "\t\t#{oldkey}\t#{newkey}"}
   end
   def commit_self
     @sensetagid = self.get_next_sensetagid
