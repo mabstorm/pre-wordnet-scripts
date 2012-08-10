@@ -14,13 +14,6 @@ $regex = {'metaphors' => Regexp.new(/\$\$\$(.*)/),
 #---------------------------------------------#
 #-------Processing the metaphors file---------#
 #---------------------------------------------#
-def sensekeys2
-  show_matches { |array, line| array.push(line.scan(/#{$regex['sensekey']}/)) }
-end
-
-def metaphors2
-  show_matches { |array, line| array.push(line.scan(/#{$regex['metaphor']}/)) }
-end
 
 =begin # method_missing approach, produces same result as metaclass approach
 def method_missing(method_id)
@@ -34,7 +27,7 @@ end
 =end
 
 # defining show_metaphors, show_sensekeys, etc. at runtime
-# defining metaphors_on_line(line), sensekeys_on_line(line)
+# defining metaphors_on(line), sensekeys_on(line), words_on(line), comments_on(line)
 metaclass = class << self; self; end
 $regex.each_pair do |name,key|
   metaclass.send(:define_method, "show_#{name}") { show_matches { |array, line| array.push(line.scan(key)) } }
@@ -46,6 +39,8 @@ def show_matches
   $metaphor_lines.each {|line| yield matches, line}
   matches = matches.flatten.compact
 end
+
+$not_found = Array.new
 
 def process_metaphors_file
   metaphors = Array.new
@@ -59,9 +54,9 @@ def process_metaphors_file
     next unless comments_on(line).empty? # skip commented lines, comments made with //
     found_metaphor = metaphors_on(line).first.downcase rescue ""
     unless found_metaphor.empty?
+      current_metaphor.add_member(current_word, current_word_position, current_keys) unless (current_metaphor.nil? || current_word.nil?) # finish up last metaphor
       current_metaphor.print unless current_metaphor.nil?
       puts ""
-      current_metaphor.add_member(current_word, current_word_position, current_keys) unless (current_metaphor.nil? || current_word.nil?) # finish up last metaphor
       current_metaphor = Metaphor.new(found_metaphor)
       current_word = nil
       current_keys = nil
@@ -70,7 +65,7 @@ def process_metaphors_file
       next # should never be anything left to do for a line that is a new metaphor
     end
     next if current_metaphor.nil?
-    word = words_on(line).first.downcase rescue ""
+    word = words_on(line).first.downcase.gsub("_"," ") rescue ""
     sensekey = sensekeys_on line
     if ((word.nil? || word.empty?) && sensekey.empty?)
       current_metaphor.definition = line
@@ -81,11 +76,13 @@ def process_metaphors_file
         current_keys = Array.new
         current_word_position = current_metaphor.text.split(" ").index(current_word) or -1
       end
-      current_keys.push(sensekey) if not sensekey.empty?
+      sensekey.each {|key| current_keys.push(key) if not key.empty? }
     end
   end
+  current_metaphor.add_member(current_word, current_word_position, current_keys) unless (current_metaphor.nil? || current_word.nil?) # finish up last metaphor
 
   metaphors.each {|metaphor| metaphor.print} # print all metaphors
+  puts metaphors.length
 
 end
 
@@ -112,10 +109,14 @@ def has_old_sensekey? sensekey
   $db.query("SELECT sensekey FROM senses WHERE sensekey==?", sensekey).to_a.length > 0
 end
 def new_sensekey_from_old sensekey
-  $db.query("SELECT new_sensekey from senses WHERE sensekey==?", sensekey).to_a.first.first rescue "not found"
+  $db.query("SELECT new_sensekey from senses WHERE sensekey==?", sensekey).to_a.first.first rescue ($not_found.push(sensekey); "not found")
 end
 def get_new_old_synsetid
   $db.query("SELECT MAX(synsetid) FROM synsets").to_a.first.first + 1
+end
+def member_definition new_sensekey
+  $db.query("SELECT definition FROM synsets, senses
+  WHERE synsets.synsetid==senses.synsetid AND senses.new_sensekey==?", new_sensekey).to_a.first.first rescue "not found"
 end
 
 class Metaphor
@@ -184,7 +185,7 @@ class MetaphorMember
   end
   def print
     puts "\t#{@word} ##{@position}"
-    @key_pairs.each {|oldkey, newkey| puts "\t\t#{oldkey}\t#{newkey}"}
+    @key_pairs.each {|oldkey, newkey| puts "\t\t#{oldkey}\t#{newkey}"} # - #{member_definition(newkey)}"}
   end
   def commit_self
     @sensetagid = self.get_next_sensetagid
@@ -214,10 +215,7 @@ $m.definition = "(USA) If someone is trying to convince people to do or feel som
 
 #main
 if __FILE__ == $0
-  puts show_sensekeys.length
-  puts sensekeys2.length
-  puts show_metaphors.length
-  puts metaphors2.length
+  #process_metaphors_file
 
 end
 

@@ -180,6 +180,9 @@ module WnQueriesHelper
   end
 
 
+  def WnQueriesHelper.apply_edit_to_database(edit)
+
+  end
 
 end
 
